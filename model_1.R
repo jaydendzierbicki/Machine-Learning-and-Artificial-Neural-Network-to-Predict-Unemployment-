@@ -13,7 +13,7 @@ library(gridExtra)
 
 
 # Load in data set and define column types in data import=======================
-abs <- read_excel("AUS_Data - Copy.xlsx", 
+abs <- read_excel("AUS_Data.xlsx", 
                   col_types = c("date", "numeric", "text", 
                                 "numeric", "numeric", "numeric", 
                                 "numeric", "numeric", "numeric"))
@@ -26,16 +26,17 @@ abs$...1 <- NULL
 # out into month and year as seasonality could be captured by doing so which
 # might not be captured otherwise. 
 abs_clean_full <- as.data.frame(abs) %>% 
-  mutate(year = lubridate::year(period),
-         month = lubridate::month(period)) %>% 
-  mutate(X1 = as.numeric(X1))
+  mutate(year = as.factor(lubridate::year(period)),
+         month = as.factor(lubridate::month(period))) %>% 
+  mutate(X1 = as.numeric(X1)) 
+(str(abs_clean_full))
 
 # We will also only retain data from after 1999, as for if we should keep it
 # or remove it for ML model it can depend on the context of the research question.
 # Does the data before 1999 contain information that could help explain patters?
 # Additionally, more data points mean a bigger training sample for the model
 abs_clean_1999 <- abs_clean_full %>% 
-  filter(year >= 1999)
+  filter(period >= "1999-01-01")
 
 
 # Data exploration==============================================================
@@ -66,6 +67,7 @@ abs_clean_1999 <- abs_clean_full %>%
 plot(ts(abs_clean_1999[,-c(9,10,11)], start=c(1999,1), frequency=4))
 plot(ts(abs_clean_full[,-c(9,10,11)], start=c(1980,1), frequency=4))
 
+
 # Many ML models are limited by missing observations, and missing observations==
 # must be treated. We observe that X6 and X7 both contain 5 missing observations
 # which should be addressed:
@@ -85,7 +87,10 @@ plot(ts(abs_clean_full[,-c(9,10,11)], start=c(1980,1), frequency=4))
 #                                we capture this? As it is a deviation from the normal.
 #                              - Explore impact on dates/months/years on ML models as this is an area for improvement 
 
+# Data for GDP appears correct for Q2/Q3 2020: https://www.focus-economics.com/countries/australia/news/gdp/lifting-of-restrictions-amid-massive-fiscal-and-monetary-stimulus
+# Data for job vacanices appears correct: https://www.abs.gov.au/statistics/labour/jobs/job-vacancies-australia/latest-release
 
 
-
-
+abs_clean_1999 <- na_interpolation(abs_clean_1999)
+plot(ts(abs_clean_1999[,-c(9,10,11)], start=c(1999,1), frequency=4))
+ggplot_na_distribution(abs_clean_1999$X6)
