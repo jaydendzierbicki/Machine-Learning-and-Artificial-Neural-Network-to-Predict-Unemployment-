@@ -10,6 +10,7 @@ library(dplyr)
 library(lubridate)
 library(ggplot2)
 library(gridExtra)
+library(imputeTS)
 
 
 # Load in data set and define column types in data import=======================
@@ -22,13 +23,19 @@ abs <- abs[-1,]
 abs$period <- abs$...1
 abs$...1 <- NULL
 
+str(abs) # Ensure data in correct format, X1 laoded as character
+
+abs <- abs %>% # Convrt X1 to numeric 
+  mutate(X1 = as.numeric(X1))
+
+str(abs) # Confrim above works
+summary(abs)
+
 # We will also metric for our analysis to the period 1998. We will split date
 # out into month and year as seasonality could be captured by doing so which
 # might not be captured otherwise. 
 abs_clean_full <- as.data.frame(abs) %>% 
-  mutate(year = as.factor(lubridate::year(period)),
-         month = as.factor(lubridate::month(period))) %>% 
-  mutate(X1 = as.numeric(X1)) 
+  mutate(month = as.factor(lubridate::month(period))) 
 (str(abs_clean_full))
 
 # We will also only retain data from after 1999, as for if we should keep it
@@ -39,7 +46,10 @@ abs_clean_1999 <- abs_clean_full %>%
   filter(period >= "1999-01-01")
 
 
-# Data exploration==============================================================
+# Data Wrangling================================================================
+# - Timeseries plot
+# - MIssing observations
+# - Summary stats
 # We will not impute missing values yet, as this data is generally seasonal we
 # deem it immature without actually having an understating of what is going on. 
 
@@ -64,9 +74,8 @@ abs_clean_1999 <- abs_clean_full %>%
 # Overall, there is clear evidence of cyclical occurrence in the data set which correspondence to 'shocks' in the system
 # due to external factors such as Covid-19 and the GFC. Based on the simple TS() plot we do observe some issues which
 # will require consulting the literature/external sources to validate the data points and correct handling on NA values.
-plot(ts(abs_clean_1999[,-c(9,10,11)], start=c(1999,1), frequency=4))
 plot(ts(abs_clean_full[,-c(9,10,11)], start=c(1980,1), frequency=4))
-
+plot(ts(abs_clean_full[,c(7,8)], start=c(1980,1), frequency=4))
 
 # Many ML models are limited by missing observations, and missing observations==
 # must be treated. We observe that X6 and X7 both contain 5 missing observations
@@ -90,7 +99,69 @@ plot(ts(abs_clean_full[,-c(9,10,11)], start=c(1980,1), frequency=4))
 # Data for GDP appears correct for Q2/Q3 2020: https://www.focus-economics.com/countries/australia/news/gdp/lifting-of-restrictions-amid-massive-fiscal-and-monetary-stimulus
 # Data for job vacanices appears correct: https://www.abs.gov.au/statistics/labour/jobs/job-vacancies-australia/latest-release
 
+# Impute missing values=========================================================
+# Will add in a flag
 
-abs_clean_1999 <- na_interpolation(abs_clean_1999)
-plot(ts(abs_clean_1999[,-c(9,10,11)], start=c(1999,1), frequency=4))
-ggplot_na_distribution(abs_clean_1999$X6)
+# Manual Imputation
+# Impute X7
+# Obtained data from: https://www.abs.gov.au/statistics/people/population/national-state-and-territory-population/latest-release
+abs_eer_x7 <- read_excel("310101.xlsx", sheet = "Data1", skip = 9) %>% 
+  select(X7_2 = A2133251W, # This is our EER value, based on series ID
+         period = `Series ID`) # This is period due to skipping the first 9 rows
+
+abs_impute_1 <- left_join(abs_clean_full, abs_eer_x7) %>%  # Left join as we don't want all observations from abs_eer_x7
+  select(-X7) # Remove X7 as we now have X7_2 with updated figures
+
+# Impute X6
+
+# Use R package to impute too missing observations
+abs_impute_2 <- na_interpolation(abs_impute_1)
+plot(ts(abs_impute_2[,c(7,10)], start=c(1980,1), frequency=4))
+ggplot_na_distribution(abs_impute_2$X6)
+
+
+
+
+
+# Data exploitation on whole data set===========================================
+# Correlation and multicolineariy testing
+library(corrplot)
+vars <- c("Y", "X1", "X2", "X3", "X4", "X5", "X6", "X7_2") 
+corr_matrix <- cor(abs_impute_2[,vars])
+# Create a correlation plot
+corrplot(corr_matrix, method = "color", type = "upper", order = "hclust")
+
+
+
+
+
+
+
+# Split data into test/train====================================================
+# At this stage we split into test/train and did not scale as this could depend
+# on which model we select.
+# Further manipulations can be applied to test/train at a later stage depending
+# on specific model 
+
+
+
+
+
+
+# Machine learning model========================================================
+
+
+
+
+
+
+
+# ANN Model=====================================================================
+
+
+
+
+
+
+# Compare ML against ANN========================================================
+
