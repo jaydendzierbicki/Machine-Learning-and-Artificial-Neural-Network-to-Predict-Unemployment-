@@ -5,12 +5,14 @@
 #===============================================================================
 #
 # Load in packages =============================================================
-library(readxl)
-library(dplyr)
+library(readxl) # Read excel files
+library(dplyr) # Data wrangling
 library(lubridate)
-library(ggplot2)
+library(ggplot2) # For plot
 library(gridExtra)
-library(imputeTS)
+library(imputeTS) # Impute TS data
+library(neuralnet) # NN modeling
+library(Hmisc) # Multiple historgrams
 
 
 # Load in data set and define column types in data import=======================
@@ -125,15 +127,45 @@ ggplot_na_distribution(abs_impute_2$X6)
 
 # Data exploitation on whole data set===========================================
 # Correlation and multicolineariy testing
-library(corrplot)
-vars <- c("Y", "X1", "X2", "X3", "X4", "X5", "X6", "X7_2") 
-corr_matrix <- cor(abs_impute_2[,vars])
-# Create a correlation plot
-corrplot(corr_matrix, method = "color", type = "upper", order = "hclust")
+# Assuming your data frame is named 'df' and the response variable is named 'Y'
+par(mfrow=c(3,3))  # Set the plot layout to a 3x3 grid
+for (i in 2:10) {  # Assuming you have 8 predictor variables in your data frame
+  plot(abs_impute_2[,i], abs_impute_2$Y, main = paste0("Scatterplot of Y vs ", colnames(abs_impute_2)[i]))
+}
+
+# Outliers
+abs_impute_2_numeric <- abs_impute_2 %>% 
+  select(-period, -month) # Remove the non-numeric varibles
+
+# Histograme of all inputs
+hist.data.frame(abs_impute_2_numeric)
+
+# Boxplots of all inputs
+# Melt the data into long format
+library(reshape2)
+abs_impute_2_melt <- melt(abs_impute_2_numeric)
+
+# Create a grid of boxplots, one for each variable
+ggplot(abs_impute_2_melt, aes(x = variable, y = value)) +
+  geom_boxplot() +
+  facet_wrap(~variable, scales = "free_y") +
+  xlab("") +
+  theme(axis.text.x = element_blank())
 
 
 
 
+# calculate z-scores for each column
+z_scores <- apply(abs_impute_2_numeric, 2, function(x) abs((x - mean(x)) / sd(x)))
+z_scores_df <- as.data.frame(z_scores) # Convert to df
+
+
+# get row indices with any z-score greater than 3
+outlier_rows <- which(apply(z_scores, 1, function(x) any(x > 3)))
+
+# create a data frame with outlier rows and corresponding z-scores
+outliers <- data.frame(row = outlier_rows, z_scores = apply(z_scores[outlier_rows,], 1, max))
+outliers$col <- apply(z_scores[outlier_rows,], 1, function(x) which(x == max(x))) # Col number
 
 
 
@@ -142,6 +174,20 @@ corrplot(corr_matrix, method = "color", type = "upper", order = "hclust")
 # on which model we select.
 # Further manipulations can be applied to test/train at a later stage depending
 # on specific model 
+#
+# We decdide to train on the full data set at this stage
+
+train_abs <- abs_impute_2 %>% 
+  filter(period < "2018-03-01") %>% 
+  select(-period)
+  
+dim(train_abs) # 147, 9
+test_abs <- abs_impute_2 %>% 
+  filter(period >= "2018-03-01") %>% 
+  select(-period)
+
+dim(test_abs) # 11, 9 
+
 
 
 
@@ -149,19 +195,104 @@ corrplot(corr_matrix, method = "color", type = "upper", order = "hclust")
 
 
 # Machine learning model========================================================
+# As dealing with a regresion problem wich varies in space and time
+# we elected to utilize a regression tree model, which we discussed in wk3.
+# Possible models include:
+# - Basic regression tree
+# - PRIM-Bump hunting
+# - Multivariate Adaptive Regresion Spline: This did quite well
+# - Bagging
+# - Random Forest: This did poorly
+# - Boosted trees: EXPLORE
+
+set.seed(1234)
+library(caret)
+
+# Define the training control
+ctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+
+# Train the random forest model using 10-fold cross-validation
+model <- train(Y ~ .,
+               data = train_abs, method = "rf", trControl = ctrl)
+
+# Print the model
+print(model)
+
+# Make predictions on the test set using the cross-validated model
+yhat <- predict(model, newdata = test_abs)
+
+# Plot the residuals
+res_test <- test_abs$Y - yhat
+plot(res_test)
+
+random_forest <- randomForest(Y ~ ., data = train_abs, mtry = 8, importance = T)
+res <- train_abs$Y - random_forest$predicted
+plot(train_abs$Y, res)
+par(mfrow=c(2,1), cex=0.7)
+barplot(sort(random_forest$importance[,1], decreasing = TRUE))
+barplot(sort(random_forest$importance[,2], decreasing = TRUE))
+
+yhat <- predict(random_forest, newdata = test_abs)
+res_test <- test_abs$Y - yhat
+plot(res_test)
 
 
+# Create a MARS model using all the data
+mars_model <- earth(Y ~ ., data = train_abs)
+
+yhat <- predict(mars_model, newdata = train_abs)
+res <- train_abs$Y - yhat
+plot(res)
 
 
+# Define the boosting model
+boost_model <- train(Y ~ ., 
+                     data = train_abs, 
+                     method = "gbm",
+                     trControl = trainControl(method = "cv", 
+                                              number = 5, 
+                                              verboseIter = TRUE), 
+                     tuneGrid = expand.grid(n.trees = c(100, 200, 300),
+                                            interaction.depth = c(1, 3, 5),
+                                            shrinkage = c(0.01, 0.1, 0.5),
+                                            n.minobsinnode = 10))
 
-
+# Make predictions on the test data
+predictions <- predict(boost_model, newdata = test_abs)
+res <- test_abs$Y - predictions
+plot(res)
 
 # ANN Model=====================================================================
 
+# We will need to hot encode month and normalise everything else which is not
+# hot encoded for ANN - month is as factor with 4 levels so use caret
 
+dummy_test <- dummyVars( " ~ .", data = test_abs)
+test_abs_ann <- data.frame(predict(dummy_test, newdata = test_abs))
 
+train_abs_ann <- dummyVars(" ~ .", data = train_abs)
+train_abs_ann <- data.frame(predict(train_abs_ann, newdata = train_abs))
 
+# We will now scale, except the month cols
+cols_to_scale_train <- train_abs_ann[, !(names(train_abs_ann) %in% c("Y","month.3", "month.6", "month.9", "month.12"))]
+cols_to_scale_test <- test_abs_ann[, !(names(test_abs_ann) %in% c("Y","month.3", "month.6", "month.9", "month.12"))]
 
+# Use scaled test/train set going forward
+scaled_train <- scale(cols_to_scale_train)
+train_abs_ann_scaled <- cbind(scaled_train, train_abs_ann[, c("Y","month.3", "month.6", "month.9", "month.12")])
+
+scaled_test <- scale(cols_to_scale_test)
+test_abs_ann_scaled <- cbind(scaled_test, test_abs_ann[, c("Y","month.3", "month.6", "month.9", "month.12")])
+
+# Apply ANN Model
+n <- names(train_abs_ann_scaled)
+func <- as.formula(paste("Y ~", paste(n[n != "Y"],collapse = " + ")))
+nn1 <- neuralnet(func,data = train_abs_ann_scaled, hidden = c(15,10))
+plot(nn1, rep = "best")
+
+(yhat <- predict(nn1, test_abs_ann_scaled) )
+res <- yhat - test_abs_ann_scaled$Y 
+plot(res)
 
 # Compare ML against ANN========================================================
 
