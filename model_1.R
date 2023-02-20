@@ -122,6 +122,33 @@ plot(ts(abs_impute_2[,c(7,10)], start=c(1980,1), frequency=4))
 ggplot_na_distribution(abs_impute_2$X6)
 
 
+# BASELINE MODEL
+# Very simple persistence model, naive model assumes that the value of the 
+# variable being predicted will be the same as its most recent observed value.
+# It does not take into account any other facots or varibles that could affect the
+# outcome.
+# Convert the date column to a time series object
+unemployment_ts <- ts(abs_impute_2$Y, start = c(1981, 2), frequency = 4)
+
+# Split the data into training and testing sets
+train <- window(unemployment_ts, end = c(2017, 4))
+test <- window(unemployment_ts, start = c(2018, 1))
+
+# Create a persistence model
+persistence_model <- tail(train, 1)
+
+# Generate predictions for the test set
+predictions <- rep(persistence_model, length(test))
+
+# Calculate the mean squared error
+mse <- mean((test - predictions)^2)
+
+# Print the MSE
+print(mse)# 0.5062626
+
+# BASLEINE MODEL END
+
+
 
 
 
@@ -205,62 +232,203 @@ dim(test_abs) # 11, 9
 # - Random Forest: This did poorly
 # - Boosted trees: EXPLORE
 
-set.seed(1234)
+# We decide to compare the following models
+# Random forest
+# MARS
+# Boosting
+# Comment on residual plots
+# Comment on test/train MSE
+
+# Out of box model: random forest model=========================================
+library(randomForest)
+set.seed(123)
+
+start_time <- Sys.time()
+# Fit a random forest model to training data
+random_forest_oobm <- randomForest(Y ~., data = train_abs)
+(end_time_rf <-Sys.time() - start_time ) # 0.03983212 secs
+
+# Calculate the predicted values on the training data
+yhat_train_oobm <- predict(random_forest_oobm, newdata = train_abs)
+
+# Calculate the residuals on the training data
+residuals_rf_oobm <- train_abs$Y - yhat_train_oobm
+plot(residuals_rf_oobm) # Plot resdiuals of rf oobm
+
+# Calculate the training MSE
+(mse_train_oobm <- mean(residuals_rf_oobm^2)) #0.07261118
+(sqrt(mse_train_oobm)) # RSME 0.2694646
+
+# Calculate the predicted values on the test data
+yhat_test_oobm <- predict(random_forest_oobm, newdata = test_abs)
+
+# Calculate the residuals on the training data
+residuals_rf_oobm_test <- test_abs$Y - yhat_test_oobm
+plot(residuals_rf_oobm_test) # Plot resdiuals of rf oobm
+
+# Calculate the training MSE
+(mse_test_oobm <- mean(residuals_rf_oobm_test^2) ) # 0.4083735
+(sqrt(mse_test_oobm)) # RMSE 0.6390411
+
+# Out of box model: MARS========================================================
+library(earth)
+set.seed(123)
+
+# Fit a MARS model to training data
+start_time <- Sys.time()
+mars_oobm <- earth(Y ~., data = train_abs )
+(end_time_mars <-Sys.time() - start_time )
+
+# Calculate the predicted values on the training data
+yhat_train_mars_oobm <- predict(mars_oobm, newdata = train_abs)
+
+# Calculate the residuals on the training data
+residuals_mars_oobm <- train_abs$Y - yhat_train_mars_oobm
+plot(residuals_mars_oobm) # Much disperse then RF
+
+# Calculate the training MSE
+(mse_train_oobm <- mean(residuals_mars_oobm^2))  # 0.09215498
+(sqrt(mse_train_oobm))  #0.3035704
+
+# Calculate the predicted values on the test data
+yhat_test_mars_oobm <- predict(mars_oobm, newdata = test_abs )
+
+# Calculate the residuals on the training data
+residuals_mars_oobm_test <- test_abs$Y - yhat_test_mars_oobm
+plot(residuals_mars_oobm_test) # Plot resdiuals of rf oobm
+
+# Calculate the training MSE
+(mse_test_oobm <- mean(residuals_mars_oobm_test^2) ) # 0.1783143
+(sqrt(mse_test_oobm)) # RMSE 
+
+# Out of box model: Boosting====================================================
+library(gbm)
+set.seed(123)
+
+# Fit a Boosting model to training data
+start_time <- Sys.time()
+# Fit a random forest model to training data
+boost_oobm <- gbm(Y ~., data = train_abs)
+(end_time_boost <-Sys.time() - start_time ) # 0.006984949 secs
+
+
+# Calculate the predicted values on the training data
+yhat_train_boost_oobm <- predict(boost_oobm, newdata = train_abs )
+
+# Calculate the residuals on the training data
+residuals_boost_oobm <- train_abs$Y - yhat_train_boost_oobm
+plot(residuals_boost_oobm) # Plot residuals of boosting oobm
+
+# Calculate the training MSE
+(mse_train_boost_oobm <- mean(residuals_boost_oobm^2)) # 0.447267
+(sqrt(mse_train_boost_oobm)) # RMSE 0.6687803
+
+# Calculate the predicted values on the test data
+yhat_test_boost_oobm <- predict(boost_oobm, newdata = test_abs )
+
+# Calculate the residuals on the test data
+residuals_boost_oobm_test <- test_abs$Y - yhat_test_boost_oobm
+plot(residuals_boost_oobm_test) # Plot residuals of boosting oobm
+
+# Calculate the test MSE
+(mse_test_boost_oobm <- mean(residuals_boost_oobm_test^2)) # 0.4935873
+(sqrt(mse_test_boost_oobm)) # RMSE0.7025577
+
+# SUMMARY=======================================================================
+#
+# We see that our model had the best train/test MSE in MARS model
+#
+#
+#===============================================================================
+
+
+# We will now optimize our MARS MODEL===========================================
+
+# Tuning: We have two parameters, the degree of interactions and the
+# number of retained terms, we will undertake a grid search to find the optimal
+# number of cominations of these hyperparamters that minmise the prediction error
 library(caret)
 
-# Define the training control
-ctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+set.seed(123)
+# create a tuning grid
+hyper_grid <- expand.grid(
+  degree = 1:3, 
+  nprune = seq(2, 100, length.out = 10) %>% floor()
+)
+tuned_mars <- train(
+  x = subset(train_abs, select = -Y),
+  y = train_abs$Y,
+  method = "earth",
+  metric = "RMSE",
+  trControl = trainControl(method = "repeatedcv", number = 10, repeats = 3),
+  tuneGrid = hyper_grid
+)
 
-# Train the random forest model using 10-fold cross-validation
-model <- train(Y ~ .,
-               data = train_abs, method = "rf", trControl = ctrl)
+# Calculate the predicted values on the training data
+yhat_train_mars <- predict(tuned_mars, newdata = train_abs)
 
-# Print the model
-print(model)
+# Calculate the residuals on the training data
+residuals_mars_train <- train_abs$Y - yhat_train_mars
+plot(residuals_mars_train) # Plot residuals of boosting oobm
 
-# Make predictions on the test set using the cross-validated model
-yhat <- predict(model, newdata = test_abs)
+# Calculate the training MSE
+(mse_train_mars <- mean(residuals_mars_train^2)) # 0.09215498
 
-# Plot the residuals
-res_test <- test_abs$Y - yhat
-plot(res_test)
-
-random_forest <- randomForest(Y ~ ., data = train_abs, mtry = 8, importance = T)
-res <- train_abs$Y - random_forest$predicted
-plot(train_abs$Y, res)
-par(mfrow=c(2,1), cex=0.7)
-barplot(sort(random_forest$importance[,1], decreasing = TRUE))
-barplot(sort(random_forest$importance[,2], decreasing = TRUE))
-
-yhat <- predict(random_forest, newdata = test_abs)
-res_test <- test_abs$Y - yhat
-plot(res_test)
-
-
-# Create a MARS model using all the data
-mars_model <- earth(Y ~ ., data = train_abs)
-
-yhat <- predict(mars_model, newdata = train_abs)
-res <- train_abs$Y - yhat
-plot(res)
+# Calculate the predicted values on the test data
+yhat_test_mars <- predict(tuned_mars, newdata = test_abs)
 
 
-# Define the boosting model
-boost_model <- train(Y ~ ., 
-                     data = train_abs, 
-                     method = "gbm",
-                     trControl = trainControl(method = "cv", 
-                                              number = 5, 
-                                              verboseIter = TRUE), 
-                     tuneGrid = expand.grid(n.trees = c(100, 200, 300),
-                                            interaction.depth = c(1, 3, 5),
-                                            shrinkage = c(0.01, 0.1, 0.5),
-                                            n.minobsinnode = 10))
+# Calculate the residuals on the test data
+residuals_mars_test <- test_abs$Y - yhat_test_mars
+plot(residuals_mars_test) # Plot residuals of boosting oobm
 
-# Make predictions on the test data
-predictions <- predict(boost_model, newdata = test_abs)
-res <- test_abs$Y - predictions
-plot(res)
+# Calculate the test MSE
+(mse_test_mars <- mean(residuals_mars_test^2)) # 0.1783143
+
+# Now lets plot everything, and put it on a graph and see how Y compares yhat==
+# Create data frame of know, predicted agaisnt time
+predict_all <- as.numeric(predict(tuned_mars, newdata = abs_impute_2))
+model_plot <- abs_impute_2 %>% 
+  select(period, Y) %>% 
+  mutate(period = as.Date(period))
+model_plot <- bind_cols(model_plot, Y_hat = predict_all)
+
+
+
+# Plot, highlight train/test data with solid line
+ggplot(model_plot, aes(x = period)) +
+  geom_line(aes(y = Y, color = "Y")) +
+  geom_line(aes(y = Y_hat, color = "Yhat")) +
+  scale_color_manual(values = c("Y" = "blue", "Yhat" = "red")) +
+  labs(x = "period", y = "Value") +
+  geom_vline(xintercept = as.Date("2018-03-01"), linetype="solid", 
+             color = "black", size=1.5)
+
+
+
+
+#####
+
+
+
+# Cross validation accuracy MARS================================================
+# create a tuning grid
+
+# Insert our tuned hyper-parameters
+hyper_grid <- expand.grid(
+  degree = 1, 
+  nprune = 23
+)
+cv_mars_model <- train(
+  x = subset(train_abs, select = -Y),
+  y = train_abs$Y,
+  method = "earth",
+  metric = "RMSE",
+  trControl = trainControl(method = "repeatedcv", number = 10, repeats = 3),
+  tuneGrid = hyper_grid
+)
+print(cv_mars_model) # RMSE 0.4196675
+
 
 # ANN Model=====================================================================
 
