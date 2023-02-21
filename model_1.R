@@ -205,17 +205,17 @@ outliers$col <- apply(z_scores[outlier_rows,], 1, function(x) which(x == max(x))
 # We decdide to train on the full data set at this stage
 
 
-abs_impute_2$X1_lag <- lag(abs_impute_2$X1)
-abs_impute_2$X2_lag <- lag(abs_impute_2$X2)
-abs_impute_2$X3_lag <- lag(abs_impute_2$X3)
-abs_impute_2$X4_lag <- lag(abs_impute_2$X4)
-abs_impute_2$X5_lag <- lag(abs_impute_2$X5)
-abs_impute_2$X6_lag <- lag(abs_impute_2$X6)
-abs_impute_2$X7_lag <- lag(abs_impute_2$X7_2)
-abs_impute_2$month_lag <- lag(abs_impute_2$month)
-abs_impute_2 <- abs_impute_2[-1,] 
-abs_impute_2 <- abs_impute_2 %>% 
-  select(-X1, -X2, -X3, -X4, -X5, -X6, -X7_2, -month)
+#abs_impute_2$X1_lag <- lag(abs_impute_2$X1)
+#abs_impute_2$X2_lag <- lag(abs_impute_2$X2)
+#abs_impute_2$X3_lag <- lag(abs_impute_2$X3)
+#abs_impute_2$X4_lag <- lag(abs_impute_2$X4)
+#abs_impute_2$X5_lag <- lag(abs_impute_2$X5)
+#abs_impute_2$X6_lag <- lag(abs_impute_2$X6)
+#abs_impute_2$X7_lag <- lag(abs_impute_2$X7_2)
+#abs_impute_2$month_lag <- lag(abs_impute_2$month)
+#abs_impute_2 <- abs_impute_2[-1,] 
+#abs_impute_2 <- abs_impute_2 %>% 
+#  select(-X1, -X2, -X3, -X4, -X5, -X6, -X7_2, -month)
 
 
 
@@ -274,7 +274,7 @@ yhat_train_oobm <- predict(random_forest_oobm, newdata = train_abs)
 
 # Calculate the residuals on the training data
 residuals_rf_oobm <- train_abs$Y - yhat_train_oobm
-plot(residuals_rf_oobm) # Plot resdiuals of rf oobm
+plot(train_abs$Y,  residuals_rf_oobm) # Plot resdiuals of rf oobm
 qqnorm(residuals_rf_oobm)
 qqline(residuals_rf_oobm)
 
@@ -287,7 +287,7 @@ yhat_test_oobm <- predict(random_forest_oobm, newdata = test_abs)
 
 # Calculate the residuals on the training data
 residuals_rf_oobm_test <- test_abs$Y - yhat_test_oobm
-plot(residuals_rf_oobm_test) # Plot resdiuals of rf oobm
+plot(test_abs$Y, residuals_rf_oobm_test) # Plot resdiuals of rf oobm
 
 # Calculate the training MSE
 (mse_test_oobm <- mean(residuals_rf_oobm_test^2) ) # 0.4083735
@@ -307,7 +307,7 @@ yhat_train_mars_oobm <- predict(mars_oobm, newdata = train_abs)
 
 # Calculate the residuals on the training data
 residuals_mars_oobm <- train_abs$Y - yhat_train_mars_oobm
-plot(residuals_mars_oobm) # Much disperse then RF
+plot(train_abs$Y,residuals_mars_oobm) # Much disperse then RF
 qqnorm(residuals_mars_oobm)
 qqline(residuals_mars_oobm)
 
@@ -320,7 +320,7 @@ yhat_test_mars_oobm <- predict(mars_oobm, newdata = test_abs )
 
 # Calculate the residuals on the training data
 residuals_mars_oobm_test <- test_abs$Y - yhat_test_mars_oobm
-plot(residuals_mars_oobm_test) # Plot resdiuals of rf oobm
+plot(test_abs$Y, residuals_mars_oobm_test) # Plot resdiuals of rf oobm
 
 # Calculate the training MSE
 (mse_test_oobm <- mean(residuals_mars_oobm_test^2) ) # 0.1783143
@@ -342,7 +342,7 @@ yhat_train_boost_oobm <- predict(boost_oobm, newdata = train_abs )
 
 # Calculate the residuals on the training data
 residuals_boost_oobm <- train_abs$Y - yhat_train_boost_oobm
-plot(residuals_boost_oobm) # Plot residuals of boosting oobm
+plot(train_abs$Y, residuals_boost_oobm) # Plot residuals of boosting oobm
 qqnorm(residuals_boost_oobm)
 qqline(residuals_boost_oobm)
 
@@ -355,7 +355,7 @@ yhat_test_boost_oobm <- predict(boost_oobm, newdata = test_abs )
 
 # Calculate the residuals on the test data
 residuals_boost_oobm_test <- test_abs$Y - yhat_test_boost_oobm
-plot(residuals_boost_oobm_test) # Plot residuals of boosting oobm
+plot(test_abs$Y,residuals_boost_oobm_test) # Plot residuals of boosting oobm
 
 # Calculate the test MSE
 (mse_test_boost_oobm <- mean(residuals_boost_oobm_test^2)) # 0.4935873
@@ -458,6 +458,10 @@ tuned_mars_2$results %>%
   filter(nprune == tuned_mars_2$bestTune$nprune, degree == tuned_mars_2$bestTune$degree) # CV RMSE 0.3838
 varImp(tuned_mars_2) # X6, X5, X7_2, X2
 
+# Extract some input to interpet model
+tuned_mars_2 <- earth(Y ~., data = train_abs, nprune = 14, degree = 1 )
+summary(tuned_mars_2) # Provide summary/coefiencets of model
+
 
 
 
@@ -466,10 +470,14 @@ yhat_train_mars <- predict(tuned_mars_2, newdata = train_abs)
 
 # Calculate the residuals on the training data
 residuals_mars_train <- train_abs$Y - yhat_train_mars
+par(mfrow = c(1,2))
 plot(train_abs$Y, residuals_mars_train) # Plot residuals of boosting oobm
+qqnorm(residuals_mars_train)
+qqline(residuals_mars_train)
 
 # Calculate the training MSE
 (mse_train_mars <- mean(residuals_mars_train^2)) # 0.09215498, same as baseline actually
+(sqrt(mse_train_mars)) # MSE 0.3035704
 
 # Calculate the predicted values on the test data
 yhat_test_mars <- predict(tuned_mars_2, newdata = test_abs)
@@ -477,7 +485,10 @@ yhat_test_mars <- predict(tuned_mars_2, newdata = test_abs)
 
 # Calculate the residuals on the test data
 residuals_mars_test <- test_abs$Y - yhat_test_mars
+par(mfrow = c(1,2))
 plot(test_abs$Y, residuals_mars_test) # Plot residuals of boosting oobm
+qqnorm(residuals_mars_test)
+qqline(residuals_mars_test)
 
 # Calculate the test MSE
 (mse_test_mars <- mean(residuals_mars_test^2)) # 0.1783143, same as baseline actually
@@ -500,7 +511,8 @@ ggplot(model_plot, aes(x = period)) +
   scale_color_manual(values = c("Y" = "blue", "Yhat" = "red")) +
   labs(x = "period", y = "Value") +
   geom_vline(xintercept = as.Date("2018-03-01"), linetype="solid", 
-             color = "black", size=1.5)
+             color = "black", size=1.5) +
+  ggtitle("Predictive Performance of MARS Model")
 
 
 
