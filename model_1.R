@@ -204,14 +204,32 @@ outliers$col <- apply(z_scores[outlier_rows,], 1, function(x) which(x == max(x))
 #
 # We decdide to train on the full data set at this stage
 
+
+abs_impute_2$X1_lag <- lag(abs_impute_2$X1)
+abs_impute_2$X2_lag <- lag(abs_impute_2$X2)
+abs_impute_2$X3_lag <- lag(abs_impute_2$X3)
+abs_impute_2$X4_lag <- lag(abs_impute_2$X4)
+abs_impute_2$X5_lag <- lag(abs_impute_2$X5)
+abs_impute_2$X6_lag <- lag(abs_impute_2$X6)
+abs_impute_2$X7_lag <- lag(abs_impute_2$X7_2)
+abs_impute_2$month_lag <- lag(abs_impute_2$month)
+abs_impute_2 <- abs_impute_2[-1,] 
+abs_impute_2 <- abs_impute_2 %>% 
+  select(-X1, -X2, -X3, -X4, -X5, -X6, -X7_2, -month)
+
+
+
 train_abs <- abs_impute_2 %>% 
   filter(period < "2018-03-01") %>% 
   select(-period)
+
+
   
 dim(train_abs) # 147, 9
 test_abs <- abs_impute_2 %>% 
   filter(period >= "2018-03-01") %>% 
   select(-period)
+
 
 dim(test_abs) # 11, 9 
 
@@ -227,7 +245,7 @@ dim(test_abs) # 11, 9
 # Possible models include:
 # - Basic regression tree
 # - PRIM-Bump hunting
-# - Multivariate Adaptive Regresion Spline: This did quite well
+# - Multivariate Adaptive Regresion Spline: This did quite well - was mentioned in R demonstration wk3
 # - Bagging
 # - Random Forest: This did poorly
 # - Boosted trees: EXPLORE
@@ -243,6 +261,9 @@ dim(test_abs) # 11, 9
 library(randomForest)
 set.seed(123)
 
+
+
+
 start_time <- Sys.time()
 # Fit a random forest model to training data
 random_forest_oobm <- randomForest(Y ~., data = train_abs)
@@ -254,6 +275,8 @@ yhat_train_oobm <- predict(random_forest_oobm, newdata = train_abs)
 # Calculate the residuals on the training data
 residuals_rf_oobm <- train_abs$Y - yhat_train_oobm
 plot(residuals_rf_oobm) # Plot resdiuals of rf oobm
+qqnorm(residuals_rf_oobm)
+qqline(residuals_rf_oobm)
 
 # Calculate the training MSE
 (mse_train_oobm <- mean(residuals_rf_oobm^2)) #0.07261118
@@ -285,6 +308,8 @@ yhat_train_mars_oobm <- predict(mars_oobm, newdata = train_abs)
 # Calculate the residuals on the training data
 residuals_mars_oobm <- train_abs$Y - yhat_train_mars_oobm
 plot(residuals_mars_oobm) # Much disperse then RF
+qqnorm(residuals_mars_oobm)
+qqline(residuals_mars_oobm)
 
 # Calculate the training MSE
 (mse_train_oobm <- mean(residuals_mars_oobm^2))  # 0.09215498
@@ -318,6 +343,8 @@ yhat_train_boost_oobm <- predict(boost_oobm, newdata = train_abs )
 # Calculate the residuals on the training data
 residuals_boost_oobm <- train_abs$Y - yhat_train_boost_oobm
 plot(residuals_boost_oobm) # Plot residuals of boosting oobm
+qqnorm(residuals_boost_oobm)
+qqline(residuals_boost_oobm)
 
 # Calculate the training MSE
 (mse_train_boost_oobm <- mean(residuals_boost_oobm^2)) # 0.447267
@@ -343,13 +370,49 @@ plot(residuals_boost_oobm_test) # Plot residuals of boosting oobm
 
 
 # We will now optimize our MARS MODEL===========================================
+# What is a MARS model? How can we describe it itnutivly? 
+
+
+# Fit a MARS model with nprune = 1
+# Will produce linear model which minimizes loss function 
+mars_model_1 <- earth(Y ~ X7_2, data = train_abs, nprune = 1) 
+summary(mars_model_1) # 1 of 7 terms, only intercept
+
+# Fit a MARS model with nprune = 2
+# Will produce linear model which minimizes loss function 
+mars_model_2 <- earth(Y ~ X7_2, data = train_abs, nprune = 2)
+summary(mars_model_2) # 2 of 7 terms, only intercept/1hinge function
+
+
+# Fit a MARS model with nprune = 3
+# Will produce linear model which minimizes loss function 
+mars_model_3 <- earth(Y ~ X7_2, data = train_abs, nprune = 3)
+summary(mars_model_3) # 3 of 7 terms, only intercept/2xhinge function
+
+# This plot will demo how it looks visually
+# Create a scatter plot of the data
+plot(train_abs$X7_2, train_abs$Y, pch=16, xlab="X7", ylab="Y")
+
+# Add lines to the plot for the MARS models
+x_vals <- seq(min(train_abs$X7_2), max(train_abs$X7_2), length.out=100)
+lines(x_vals, predict(mars_model_1, newdata=data.frame(X7_2=x_vals)), col="red", lwd=2)
+lines(x_vals, predict(mars_model_2, newdata=data.frame(X7_2=x_vals)), col="blue", lwd=2)
+lines(x_vals, predict(mars_model_3, newdata=data.frame(X7_2=x_vals)), col="green", lwd=2)
+
+# Add a legend to the plot
+legend("topright", legend=c("nprune=1", "nprune=2", "nprune=3"), 
+       col=c("red", "blue", "green"), lty=1)
+
+
 
 # Tuning: We have two parameters, the degree of interactions and the
 # number of retained terms, we will undertake a grid search to find the optimal
 # number of cominations of these hyperparamters that minmise the prediction error
+
 library(caret)
 
 set.seed(123)
+start_time <- Sys.time()
 # create a tuning grid
 hyper_grid <- expand.grid(
   degree = 1:3, 
@@ -364,30 +427,65 @@ tuned_mars <- train(
   tuneGrid = hyper_grid
 )
 
+end_time <- Sys.time() - start_time # Time difference of 38 seconds
+plot(tuned_mars)
+tuned_mars$bestTune # nprune = 23, degree = 1\
+tuned_mars$results %>% 
+  filter(nprune == tuned_mars$bestTune$nprune, degree == tuned_mars$bestTune$degree) # RMSE 0.3842
+
+
+# Can we further improve our model by tweaking nprune, we set degree as 1
+set.seed(123)
+start_time <- Sys.time()
+# create a tuning grid
+hyper_grid_2 <- expand.grid(
+  degree = 1:3, 
+  nprune = 1:23 %>% floor()
+)
+tuned_mars_2 <- train(
+  x = subset(train_abs, select = -Y),
+  y = train_abs$Y,
+  method = "earth",
+  metric = "RMSE",
+  trControl = trainControl(method = "repeatedcv", number = 10, repeats = 3),
+  tuneGrid = hyper_grid_2
+)
+
+end_time <- Sys.time() - start_time # Time difference of 23 seconds
+plot(tuned_mars_2)
+tuned_mars$bestTune # nprune = 14, degree = 1\
+tuned_mars_2$results %>% 
+  filter(nprune == tuned_mars_2$bestTune$nprune, degree == tuned_mars_2$bestTune$degree) # CV RMSE 0.3838
+varImp(tuned_mars_2) # X6, X5, X7_2, X2
+
+
+
+
 # Calculate the predicted values on the training data
-yhat_train_mars <- predict(tuned_mars, newdata = train_abs)
+yhat_train_mars <- predict(tuned_mars_2, newdata = train_abs)
 
 # Calculate the residuals on the training data
 residuals_mars_train <- train_abs$Y - yhat_train_mars
-plot(residuals_mars_train) # Plot residuals of boosting oobm
+plot(train_abs$Y, residuals_mars_train) # Plot residuals of boosting oobm
 
 # Calculate the training MSE
-(mse_train_mars <- mean(residuals_mars_train^2)) # 0.09215498
+(mse_train_mars <- mean(residuals_mars_train^2)) # 0.09215498, same as baseline actually
 
 # Calculate the predicted values on the test data
-yhat_test_mars <- predict(tuned_mars, newdata = test_abs)
+yhat_test_mars <- predict(tuned_mars_2, newdata = test_abs)
 
 
 # Calculate the residuals on the test data
 residuals_mars_test <- test_abs$Y - yhat_test_mars
-plot(residuals_mars_test) # Plot residuals of boosting oobm
+plot(test_abs$Y, residuals_mars_test) # Plot residuals of boosting oobm
 
 # Calculate the test MSE
-(mse_test_mars <- mean(residuals_mars_test^2)) # 0.1783143
+(mse_test_mars <- mean(residuals_mars_test^2)) # 0.1783143, same as baseline actually
+(sqrt(mse_test_mars))
 
 # Now lets plot everything, and put it on a graph and see how Y compares yhat==
 # Create data frame of know, predicted agaisnt time
-predict_all <- as.numeric(predict(tuned_mars, newdata = abs_impute_2))
+predict_all <- as.numeric(predict(tuned_mars_2, newdata = abs_impute_2))
 model_plot <- abs_impute_2 %>% 
   select(period, Y) %>% 
   mutate(period = as.Date(period))
@@ -415,9 +513,10 @@ ggplot(model_plot, aes(x = period)) +
 # create a tuning grid
 
 # Insert our tuned hyper-parameters
+set.seed(123)
 hyper_grid <- expand.grid(
   degree = 1, 
-  nprune = 23
+  nprune = 14
 )
 cv_mars_model <- train(
   x = subset(train_abs, select = -Y),
@@ -427,14 +526,32 @@ cv_mars_model <- train(
   trControl = trainControl(method = "repeatedcv", number = 10, repeats = 3),
   tuneGrid = hyper_grid
 )
-print(cv_mars_model) # RMSE 0.4196675
+print(cv_mars_model) # 0.3838806  
+
+
+
+
+
+
+
+
+
+
+# END OF MACHINE LEARNING SECTION===============================================
+
+
+
+
+
+
+
 
 
 # ANN Model=====================================================================
 
 # We will need to hot encode month and normalise everything else which is not
 # hot encoded for ANN - month is as factor with 4 levels so use caret
-
+library(caret)
 dummy_test <- dummyVars( " ~ .", data = test_abs)
 test_abs_ann <- data.frame(predict(dummy_test, newdata = test_abs))
 
@@ -452,15 +569,95 @@ train_abs_ann_scaled <- cbind(scaled_train, train_abs_ann[, c("Y","month.3", "mo
 scaled_test <- scale(cols_to_scale_test)
 test_abs_ann_scaled <- cbind(scaled_test, test_abs_ann[, c("Y","month.3", "month.6", "month.9", "month.12")])
 
-# Apply ANN Model
-n <- names(train_abs_ann_scaled)
-func <- as.formula(paste("Y ~", paste(n[n != "Y"],collapse = " + ")))
-nn1 <- neuralnet(func,data = train_abs_ann_scaled, hidden = c(15,10))
-plot(nn1, rep = "best")
+# Define formula for neural network
+# Define formula for neural network
+n <- ncol(train_abs_ann_scaled)
+formula <- as.formula(paste("Y ~", paste(colnames(train_abs_ann_scaled[-8]), collapse = " + ")))
 
-(yhat <- predict(nn1, test_abs_ann_scaled) )
+# https://www.r-bloggers.com/2015/09/fitting-a-neural-network-in-r-neuralnet-package/
+
+set.seed(123)
+nn <- neuralnet(formula,data=train_abs_ann_scaled,hidden=c(5,3))
+plot(nn)
+
+
+
+
+
+
+# Evaluate performance
+
+(yhat <- predict(nn, test_abs_ann_scaled) )
 res <- yhat - test_abs_ann_scaled$Y 
 plot(res)
+(mse <- mean(res^2)) # 0.1783143
+
+
+
+
+
+
+# 10 fold cross validation
+# load required libraries
+library(neuralnet)
+library(caret)
+
+# set seed for reproducibility
+set.seed(123)
+
+# specify formula for neural network
+formula <- as.formula(paste("Y ~", paste(colnames(train_abs_ann_scaled[-8]), collapse = " + ")))
+
+# define function to build neural network model
+build_nn <- function(train_data, hidden_sizes) {
+  
+  # specify the neural network architecture
+  nn <- neuralnet(formula, data = train_data, hidden = hidden_sizes, linear.output = TRUE)
+  
+  # return the trained neural network model
+  return(nn)
+}
+
+# set up k-fold cross-validation
+k <- 10
+folds <- createFolds(train_abs_ann_scaled$Y, k = k, list = TRUE, returnTrain = TRUE)
+
+# initialize vector to store validation RMSEs
+rmse_vals <- rep(0, k)
+
+# loop over each fold and train the neural network model
+for (i in seq_along(folds)) {
+  # extract training and validation data
+  train_data <- train_abs_ann_scaled[folds[[i]], ]
+  validation_data <- train_abs_ann_scaled[-folds[[i]], ]
+  
+  # train neural network model
+  nn <- neuralnet(formula, data=train_data, hidden=c(5,3),  stepmax=1e+06)
+  
+  # make predictions on validation data
+  pred <- predict(nn, validation_data[-8])
+  
+  # calculate RMSE for validation data
+  rmse <- sqrt(mean((pred - validation_data$Y)^2))
+  
+  # store RMSE value
+  rmse_vals[i] <- rmse
+}
+
+# calculate mean RMSE over all folds
+mean_rmse <- mean(rmse_vals) # 1.501751
+
+# fit final model on all training data and make predictions on test data
+final_model <- build_nn(train_abs_ann_scaled, c(5, 3))
+test_pred <- predict(final_model, test_abs_ann_scaled)
+
+# calculate test RMSE
+test_rmse <- (mean((test_pred - test_abs_ann_scaled$Y)^2))
+
+
+
+
+
 
 # Compare ML against ANN========================================================
 
