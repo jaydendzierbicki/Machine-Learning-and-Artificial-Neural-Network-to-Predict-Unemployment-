@@ -37,7 +37,8 @@ summary(abs)
 # out into month and year as seasonality could be captured by doing so which
 # might not be captured otherwise. 
 abs_clean_full <- as.data.frame(abs) %>% 
-  mutate(month = as.factor(lubridate::month(period))) 
+  mutate(month = as.factor(lubridate::month(period)),
+         year = as.factor(lubridate::year(period))) 
 (str(abs_clean_full))
 
 # We will also only retain data from after 1999, as for if we should keep it
@@ -270,7 +271,7 @@ random_forest_oobm <- randomForest(Y ~., data = train_abs)
 (end_time_rf <-Sys.time() - start_time ) # 0.03983212 secs
 
 # Calculate the predicted values on the training data
-yhat_train_oobm <- predict(random_forest_oobm, newdata = train_abs)
+yhat_train_oobm <- predict(random_forest_oobm, newdata = train_abs )
 
 # Calculate the residuals on the training data
 residuals_rf_oobm <- train_abs$Y - yhat_train_oobm
@@ -279,8 +280,8 @@ qqnorm(residuals_rf_oobm)
 qqline(residuals_rf_oobm)
 
 # Calculate the training MSE
-(mse_train_oobm <- mean(residuals_rf_oobm^2)) #0.07261118
-(sqrt(mse_train_oobm)) # RSME 0.2694646
+(mse_train_oobm <- mean(residuals_rf_oobm^2)) #0.02870791
+(sqrt(mse_train_oobm))# 0.1694341
 
 # Calculate the predicted values on the test data
 yhat_test_oobm <- predict(random_forest_oobm, newdata = test_abs)
@@ -290,8 +291,8 @@ residuals_rf_oobm_test <- test_abs$Y - yhat_test_oobm
 plot(test_abs$Y, residuals_rf_oobm_test) # Plot resdiuals of rf oobm
 
 # Calculate the training MSE
-(mse_test_oobm <- mean(residuals_rf_oobm_test^2) ) # 0.4083735
-(sqrt(mse_test_oobm)) # RMSE 0.6390411
+(mse_test_oobm <- mean(residuals_rf_oobm_test^2) ) #0.5838018
+(sqrt(mse_test_oobm)) # RMSE  0.7640692
 
 # Out of box model: MARS========================================================
 library(earth)
@@ -303,7 +304,7 @@ mars_oobm <- earth(Y ~., data = train_abs )
 (end_time_mars <-Sys.time() - start_time )
 
 # Calculate the predicted values on the training data
-yhat_train_mars_oobm <- predict(mars_oobm, newdata = train_abs)
+yhat_train_mars_oobm <- predict(mars_oobm, newdata = train_abs )
 
 # Calculate the residuals on the training data
 residuals_mars_oobm <- train_abs$Y - yhat_train_mars_oobm
@@ -312,19 +313,19 @@ qqnorm(residuals_mars_oobm)
 qqline(residuals_mars_oobm)
 
 # Calculate the training MSE
-(mse_train_oobm <- mean(residuals_mars_oobm^2))  # 0.09215498
-(sqrt(mse_train_oobm))  #0.3035704
+(mse_train_oobm <- mean(residuals_mars_oobm^2))  # 0.04736039
+(sqrt(mse_train_oobm))  #0.4401467
 
 # Calculate the predicted values on the test data
-yhat_test_mars_oobm <- predict(mars_oobm, newdata = test_abs )
+yhat_test_mars_oobm <- predict(mars_oobm, newdata = test_abs  )
 
 # Calculate the residuals on the training data
 residuals_mars_oobm_test <- test_abs$Y - yhat_test_mars_oobm
 plot(test_abs$Y, residuals_mars_oobm_test) # Plot resdiuals of rf oobm
 
 # Calculate the training MSE
-(mse_test_oobm <- mean(residuals_mars_oobm_test^2) ) # 0.1783143
-(sqrt(mse_test_oobm)) # RMSE 
+(mse_test_oobm <- mean(residuals_mars_oobm_test^2) ) # 00.1937292
+(sqrt(mse_test_oobm)) # RMSE 0.4401467
 
 # Out of box model: Boosting====================================================
 library(gbm)
@@ -333,7 +334,7 @@ set.seed(123)
 # Fit a Boosting model to training data
 start_time <- Sys.time()
 # Fit a random forest model to training data
-boost_oobm <- gbm(Y ~., data = train_abs)
+boost_oobm <- gbm(Y ~., data = train_abs )
 (end_time_boost <-Sys.time() - start_time ) # 0.006984949 secs
 
 
@@ -347,18 +348,18 @@ qqnorm(residuals_boost_oobm)
 qqline(residuals_boost_oobm)
 
 # Calculate the training MSE
-(mse_train_boost_oobm <- mean(residuals_boost_oobm^2)) # 0.447267
-(sqrt(mse_train_boost_oobm)) # RMSE 0.6687803
+(mse_train_boost_oobm <- mean(residuals_boost_oobm^2)) # 0.08096076
+(sqrt(mse_train_boost_oobm)) # RMSE 0.284536
 
 # Calculate the predicted values on the test data
-yhat_test_boost_oobm <- predict(boost_oobm, newdata = test_abs )
+yhat_test_boost_oobm <- predict(boost_oobm, newdata = test_abs   )
 
 # Calculate the residuals on the test data
 residuals_boost_oobm_test <- test_abs$Y - yhat_test_boost_oobm
 plot(test_abs$Y,residuals_boost_oobm_test) # Plot residuals of boosting oobm
 
 # Calculate the test MSE
-(mse_test_boost_oobm <- mean(residuals_boost_oobm_test^2)) # 0.4935873
+(mse_test_boost_oobm <- mean(residuals_boost_oobm_test^2)) #1.723489
 (sqrt(mse_test_boost_oobm)) # RMSE0.7025577
 
 # SUMMARY=======================================================================
@@ -375,7 +376,7 @@ plot(test_abs$Y,residuals_boost_oobm_test) # Plot residuals of boosting oobm
 
 # Fit a MARS model with nprune = 1
 # Will produce linear model which minimizes loss function 
-mars_model_1 <- earth(Y ~ X7_2, data = train_abs, nprune = 1) 
+mars_model_1 <- earth(Y ~ X7_2, data = train_abs %>% select(-period), nprune = 1) 
 summary(mars_model_1) # 1 of 7 terms, only intercept
 
 # Fit a MARS model with nprune = 2
@@ -431,7 +432,7 @@ end_time <- Sys.time() - start_time # Time difference of 38 seconds
 plot(tuned_mars)
 tuned_mars$bestTune # nprune = 23, degree = 1\
 tuned_mars$results %>% 
-  filter(nprune == tuned_mars$bestTune$nprune, degree == tuned_mars$bestTune$degree) # RMSE 0.3842
+  filter(nprune == tuned_mars$bestTune$nprune, degree == tuned_mars$bestTune$degree) 
 
 
 # Can we further improve our model by tweaking nprune, we set degree as 1
@@ -440,7 +441,7 @@ start_time <- Sys.time()
 # create a tuning grid
 hyper_grid_2 <- expand.grid(
   degree = 1:3, 
-  nprune = 1:23 %>% floor()
+  nprune = 2:23 %>% floor()
 )
 tuned_mars_2 <- train(
   x = subset(train_abs, select = -Y),
@@ -453,13 +454,13 @@ tuned_mars_2 <- train(
 
 end_time <- Sys.time() - start_time # Time difference of 23 seconds
 plot(tuned_mars_2)
-tuned_mars$bestTune # nprune = 14, degree = 1\
+tuned_mars_2$bestTune # nprune = 20, degree = 1\
 tuned_mars_2$results %>% 
-  filter(nprune == tuned_mars_2$bestTune$nprune, degree == tuned_mars_2$bestTune$degree) # CV RMSE 0.3838
-varImp(tuned_mars_2) # X6, X5, X7_2, X2
+  filter(nprune == tuned_mars_2$bestTune$nprune, degree == tuned_mars_2$bestTune$degree) # CV RMSE 0.3252662 
+varImp(tuned_mars_2) 
 
 # Extract some input to interpet model
-tuned_mars_2 <- earth(Y ~., data = train_abs, nprune = 14, degree = 1 )
+tuned_mars_2 <- earth(Y ~., data = train_abs, nprune = 20, degree = 1 )
 summary(tuned_mars_2) # Provide summary/coefiencets of model
 
 
@@ -476,8 +477,8 @@ qqnorm(residuals_mars_train)
 qqline(residuals_mars_train)
 
 # Calculate the training MSE
-(mse_train_mars <- mean(residuals_mars_train^2)) # 0.09215498, same as baseline actually
-(sqrt(mse_train_mars)) # MSE 0.3035704
+(mse_train_mars <- mean(residuals_mars_train^2)) 
+(sqrt(mse_train_mars)) 
 
 # Calculate the predicted values on the test data
 yhat_test_mars <- predict(tuned_mars_2, newdata = test_abs)
