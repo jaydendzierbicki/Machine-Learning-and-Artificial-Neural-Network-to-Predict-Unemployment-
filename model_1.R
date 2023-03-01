@@ -49,6 +49,17 @@ abs_clean_1999 <- abs_clean_full %>%
   filter(period >= "1999-01-01")
 
 
+
+
+
+
+
+
+
+
+
+
+
 # Data Wrangling================================================================
 # - Timeseries plot
 # - MIssing observations
@@ -121,9 +132,25 @@ abs_impute_1 <- left_join(abs_clean_full, abs_eer_x7) %>%  # Left join as we don
 abs_impute_2 <- na_interpolation(abs_impute_1)
 plot(ts(abs_impute_2[,c(7,10)], start=c(1980,1), frequency=4))
 ggplot_na_distribution(abs_impute_2$X6)
+plot(ts(abs_impute_2[,c(7,8)], start=c(1980,1), frequency=4))
 
 
-# BASELINE MODEL
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# BASELINE MODEL================================================================
 # Very simple persistence model, naive model assumes that the value of the 
 # variable being predicted will be the same as its most recent observed value.
 # It does not take into account any other facots or varibles that could affect the
@@ -145,9 +172,16 @@ predictions <- rep(persistence_model, length(test))
 mse <- mean((test - predictions)^2)
 
 # Print the MSE
-print(mse)# 0.5062626
+sqrt(mse)
 
-# BASLEINE MODEL END
+
+
+
+
+
+
+
+
 
 
 
@@ -163,7 +197,7 @@ for (i in 2:10) {  # Assuming you have 8 predictor variables in your data frame
 
 # Outliers
 abs_impute_2_numeric <- abs_impute_2 %>% 
-  select(-period, -month) # Remove the non-numeric varibles
+  select(-period, -month, -year) # Remove the non-numeric varibles
 
 # Histograme of all inputs
 hist.data.frame(abs_impute_2_numeric)
@@ -173,27 +207,32 @@ hist.data.frame(abs_impute_2_numeric)
 library(reshape2)
 abs_impute_2_melt <- melt(abs_impute_2_numeric)
 
-# Create a grid of boxplots, one for each variable
+# Load required packages
+library(ggplot2)
+library(ggpubr)
+
+# Create the boxplot with ggplot
 ggplot(abs_impute_2_melt, aes(x = variable, y = value)) +
   geom_boxplot() +
   facet_wrap(~variable, scales = "free_y") +
   xlab("") +
-  theme(axis.text.x = element_blank())
+  theme(axis.text.x = element_blank()) 
+
+# Summary stats
+summary(abs_impute_2_numeric)
+sd_table <- abs_impute_2_numeric %>% # SD value
+  summarise_at(vars(Y:X7_2), sd)
 
 
 
 
-# calculate z-scores for each column
-z_scores <- apply(abs_impute_2_numeric, 2, function(x) abs((x - mean(x)) / sd(x)))
-z_scores_df <- as.data.frame(z_scores) # Convert to df
 
 
-# get row indices with any z-score greater than 3
-outlier_rows <- which(apply(z_scores, 1, function(x) any(x > 3)))
 
-# create a data frame with outlier rows and corresponding z-scores
-outliers <- data.frame(row = outlier_rows, z_scores = apply(z_scores[outlier_rows,], 1, max))
-outliers$col <- apply(z_scores[outlier_rows,], 1, function(x) which(x == max(x))) # Col number
+
+
+
+
 
 
 
@@ -206,6 +245,11 @@ outliers$col <- apply(z_scores[outlier_rows,], 1, function(x) which(x == max(x))
 # We decdide to train on the full data set at this stage
 
 
+# Whilst not shown here, we see improvement in RMSE validation if we lag variables
+# MARS Still best model based on lag. This is included in disccusion as part of
+# ways to improve the model to account for time effect.
+
+# If we want to lag varibiles & tune
 #abs_impute_2$X1_lag <- lag(abs_impute_2$X1)
 #abs_impute_2$X2_lag <- lag(abs_impute_2$X2)
 #abs_impute_2$X3_lag <- lag(abs_impute_2$X3)
@@ -226,13 +270,17 @@ train_abs <- abs_impute_2 %>%
 
 
   
-dim(train_abs) # 147, 9
+dim(train_abs) # 147, 10
 test_abs <- abs_impute_2 %>% 
   filter(period >= "2018-03-01") %>% 
   select(-period)
 
 
-dim(test_abs) # 11, 9 
+dim(test_abs) # 11, 10
+
+
+
+
 
 
 
@@ -291,8 +339,8 @@ residuals_rf_oobm_test <- test_abs$Y - yhat_test_oobm
 plot(test_abs$Y, residuals_rf_oobm_test) # Plot resdiuals of rf oobm
 
 # Calculate the training MSE
-(mse_test_oobm <- mean(residuals_rf_oobm_test^2) ) #0.5838018
-(sqrt(mse_test_oobm)) # RMSE  0.7640692
+(mse_test_oobm <- mean(residuals_rf_oobm_test^2) ) #0.6030101
+(sqrt(mse_test_oobm)) # RMSE  0.7765373
 
 # Out of box model: MARS========================================================
 library(earth)
@@ -324,8 +372,8 @@ residuals_mars_oobm_test <- test_abs$Y - yhat_test_mars_oobm
 plot(test_abs$Y, residuals_mars_oobm_test) # Plot resdiuals of rf oobm
 
 # Calculate the training MSE
-(mse_test_oobm <- mean(residuals_mars_oobm_test^2) ) # 00.1937292
-(sqrt(mse_test_oobm)) # RMSE 0.4401467
+(mse_test_oobm <- mean(residuals_mars_oobm_test^2) ) #0.4132105
+(sqrt(mse_test_oobm)) # RMSE 0.6428145
 
 # Out of box model: Boosting====================================================
 library(gbm)
@@ -360,23 +408,19 @@ plot(test_abs$Y,residuals_boost_oobm_test) # Plot residuals of boosting oobm
 
 # Calculate the test MSE
 (mse_test_boost_oobm <- mean(residuals_boost_oobm_test^2)) #1.723489
-(sqrt(mse_test_boost_oobm)) # RMSE0.7025577
+(sqrt(mse_test_boost_oobm)) # RMSE
 
-# SUMMARY=======================================================================
-#
-# We see that our model had the best train/test MSE in MARS model
-#
-#
-#===============================================================================
+
 
 
 # We will now optimize our MARS MODEL===========================================
-# What is a MARS model? How can we describe it itnutivly? 
+# What is a MARS model? How can we describe it itnutivly? We can
+# plot it out and put some points around it:
 
 
 # Fit a MARS model with nprune = 1
 # Will produce linear model which minimizes loss function 
-mars_model_1 <- earth(Y ~ X7_2, data = train_abs %>% select(-period), nprune = 1) 
+mars_model_1 <- earth(Y ~ X7_2, data = train_abs, nprune = 1) 
 summary(mars_model_1) # 1 of 7 terms, only intercept
 
 # Fit a MARS model with nprune = 2
@@ -405,7 +449,7 @@ legend("topright", legend=c("nprune=1", "nprune=2", "nprune=3"),
        col=c("red", "blue", "green"), lty=1)
 
 
-
+# TUNE MARS MODEL===============================================================
 # Tuning: We have two parameters, the degree of interactions and the
 # number of retained terms, we will undertake a grid search to find the optimal
 # number of cominations of these hyperparamters that minmise the prediction error
@@ -460,11 +504,10 @@ tuned_mars_2$results %>%
 varImp(tuned_mars_2) 
 
 # Extract some input to interpet model
+set.seed(123)
 tuned_mars_2 <- earth(Y ~., data = train_abs, nprune = 20, degree = 1 )
+#tuned_mars_2 <- earth(Y ~., data = train_abs, nprune = 11, degree = 1 ) # Without year in model
 summary(tuned_mars_2) # Provide summary/coefiencets of model
-
-
-
 
 # Calculate the predicted values on the training data
 yhat_train_mars <- predict(tuned_mars_2, newdata = train_abs)
@@ -518,9 +561,6 @@ ggplot(model_plot, aes(x = period)) +
 
 
 
-#####
-
-
 
 # Cross validation accuracy MARS================================================
 # create a tuning grid
@@ -529,7 +569,7 @@ ggplot(model_plot, aes(x = period)) +
 set.seed(123)
 hyper_grid <- expand.grid(
   degree = 1, 
-  nprune = 14
+  nprune = 20
 )
 cv_mars_model <- train(
   x = subset(train_abs, select = -Y),
@@ -550,10 +590,6 @@ print(cv_mars_model) # 0.3838806
 
 
 
-# END OF MACHINE LEARNING SECTION===============================================
-
-
-
 
 
 
@@ -562,115 +598,206 @@ print(cv_mars_model) # 0.3838806
 
 # ANN Model=====================================================================
 
-# We will need to hot encode month and normalise everything else which is not
-# hot encoded for ANN - month is as factor with 4 levels so use caret
+# Data prep
 library(caret)
-dummy_test <- dummyVars( " ~ .", data = test_abs)
-test_abs_ann <- data.frame(predict(dummy_test, newdata = test_abs))
 
-train_abs_ann <- dummyVars(" ~ .", data = train_abs)
-train_abs_ann <- data.frame(predict(train_abs_ann, newdata = train_abs))
+# ANN/Deep learning requires data to be scaled:
+# We do not want to scale month/year/Y we will hot encode these
+cols_to_scale <- c("X1", "X2", "X3", "X4", "X5" ,"X6", "X7_2")
+#cols_to_scale <- c("X1_lag", "X2_lag", "X3_lag", "X4_lag", "X5_lag" ,"X6_lag", "X7_lag") # If we lag
+cols_not_to_scale <- c("Y", "month" , "year")
+#cols_not_to_scale <- c("Y", "month_lag" ) #, "year") # IF we lag
 
-# We will now scale, except the month cols
-cols_to_scale_train <- train_abs_ann[, !(names(train_abs_ann) %in% c("Y","month.3", "month.6", "month.9", "month.12"))]
-cols_to_scale_test <- test_abs_ann[, !(names(test_abs_ann) %in% c("Y","month.3", "month.6", "month.9", "month.12"))]
+# Calculate the mean and standard deviation of the numerical variables in the training set
+train_mean <- apply(train_abs[, cols_to_scale], 2, mean)
+train_sd <- apply(train_abs[, cols_to_scale], 2, sd)
 
-# Use scaled test/train set going forward
-scaled_train <- scale(cols_to_scale_train)
-train_abs_ann_scaled <- cbind(scaled_train, train_abs_ann[, c("Y","month.3", "month.6", "month.9", "month.12")])
+# Scale the numerical variables in the training set using the mean and standard deviation from the training set
+train_abs_ann_scaled <- scale(train_abs[, cols_to_scale], center = train_mean, scale = train_sd)
 
-scaled_test <- scale(cols_to_scale_test)
-test_abs_ann_scaled <- cbind(scaled_test, test_abs_ann[, c("Y","month.3", "month.6", "month.9", "month.12")])
+# Scale the numerical variables in the test set using the mean and standard deviation from the training set
+test_abs_ann_scaled<- scale(test_abs[, cols_to_scale], center = train_mean, scale = train_sd)
 
-# Define formula for neural network
-# Define formula for neural network
-n <- ncol(train_abs_ann_scaled)
-formula <- as.formula(paste("Y ~", paste(colnames(train_abs_ann_scaled[-8]), collapse = " + ")))
+# Add back columns non scaled data 
+train_abs_ann_scaled <- cbind(train_abs_ann_scaled[, cols_to_scale], train_abs[, cols_not_to_scale]) #%>% select(-year)
+test_abs_ann_scaled <- cbind(test_abs_ann_scaled[, 1:7], test_abs[, cols_not_to_scale]) # %>% select(-year)
+
+
+dummy_test <- dummyVars( " ~ .", data = test_abs_ann_scaled)
+test_abs_ann_scaled <- data.frame(predict(dummy_test, newdata = test_abs_ann_scaled))
+
+dummy_train <- dummyVars(" ~ .", data = train_abs_ann_scaled)
+train_abs_ann_scaled <- data.frame(predict(dummy_train, newdata = train_abs_ann_scaled))
+
+
 
 # https://www.r-bloggers.com/2015/09/fitting-a-neural-network-in-r-neuralnet-package/
 
+# We will compare 3 simple neural networks, 1 hidden layer, 2 hidden layer and 3 hidden layer NB: Unable to do 3 due to taking 24+ hours
+# we will select the most optimized one via a grid search approach which loops
+# 1:50 based on the number of varibles. This should answer all the requred points
+# of the NN question. We have variations in number of nodes, as well as variation
+# in number of hidden networks. 
+# We use set seed for reproducatiblity.
+
+
+# Two hidden layer model: Varying the number of neurons in each layer 
+start_time <- Sys.time()
 set.seed(123)
-nn <- neuralnet(formula,data=train_abs_ann_scaled,hidden=c(5,3))
-plot(nn)
-
-
-
-
-
-
-# Evaluate performance
-
-(yhat <- predict(nn, test_abs_ann_scaled) )
-res <- yhat - test_abs_ann_scaled$Y 
-plot(res)
-(mse <- mean(res^2)) # 0.1783143
-
-
-
-
-
-
-# 10 fold cross validation
-# load required libraries
-library(neuralnet)
-library(caret)
-
-# set seed for reproducibility
-set.seed(123)
-
-# specify formula for neural network
+loop <- 1:100 # 1:50 What if we vary the number of neurons?
+loop2 <- 1:100 # 1:50 
+mse1 <- data.frame(Layer_1_neuron = numeric(),
+                   Layer_2_neuron = numeric(),
+                   Test_MSE = numeric())
 formula <- as.formula(paste("Y ~", paste(colnames(train_abs_ann_scaled[-8]), collapse = " + ")))
-
-# define function to build neural network model
-build_nn <- function(train_data, hidden_sizes) {
-  
-  # specify the neural network architecture
-  nn <- neuralnet(formula, data = train_data, hidden = hidden_sizes, linear.output = TRUE)
-  
-  # return the trained neural network model
-  return(nn)
+for (i in loop){
+  for (j in loop2){
+    set.seed(123)
+    tryCatch({
+      nn <- neuralnet(formula, data=train_abs_ann_scaled, hidden=c(i, j))
+      yhat <- predict(nn, test_abs_ann_scaled)
+      res <- yhat - test_abs_ann_scaled$Y 
+      mse <- mean(res^2)
+      
+      yhattrain <- predict(nn, train_abs_ann_scaled)
+      restrain <- yhattrain - train_abs_ann_scaled$Y 
+      msetrain <- mean(restrain^2)
+      output <- data.frame(Layer_1_neuron = i,
+                           Layer_2_neuron = j,
+                           Test_MSE = mse,
+                           Train_MSE = msetrain)
+      mse1 <- rbind(mse1, output)
+      print(paste0("N1 ", i, " N2 ", j, " Test MSE ", mse, " Train MSE ", msetrain))
+    }, error = function(e){
+      print(paste0("Error: ", e$message)) # We anticipate some issues 0
+    })
+  }
 }
+end_time <- Sys.time() - start_time # 30 mins
 
-# set up k-fold cross-validation
+# Find row with the lowest Test_MSE value
+min_row <- which.min(mse1$Test_MSE)
+
+# Extract the corresponding values of Layer_1_neuron, Layer_2_neuron, and Test_MSE
+(best_result <- mse1[min_row, ]) # L1: 49, L2: 18, Test MSE 0.122355
+
+# NB: Remove year, best result is L1, L2, Test MSE
+
+
+
+# One hidden layer model
+start_time <- Sys.time()
+set.seed(123)
+loop <- 1:100 #ncol(train_abs_ann_scaled) - 1
+mse2 <- data.frame(Layer_1_neuron = numeric(),
+                   Test_MSE = numeric())
+formula <- as.formula(paste("Y ~", paste(colnames(train_abs_ann_scaled[-8]), collapse = " + ")))
+for (i in loop){
+  set.seed(123)
+  tryCatch({
+    nn <- neuralnet(formula, data=train_abs_ann_scaled, hidden=c(i))
+    yhat <- predict(nn, test_abs_ann_scaled)
+    res <- yhat - test_abs_ann_scaled$Y 
+    mse <- mean(res^2)
+    yhattrain <- predict(nn, train_abs_ann_scaled)
+    restrain <- yhattrain - train_abs_ann_scaled$Y 
+    msetrain <- mean(restrain^2)
+    output <- data.frame(Layer_1_neuron = i,
+                         Test_MSE = mse,
+                         Train_MSE = msetrain)
+    print(paste0("N1 ", i, ", Train MSE ", mse, " Test MSE ", msetrain))
+    mse2 <- rbind(mse2, output)
+  }, error = function(e){
+    print(paste0("Error: ", e$message)) # We anticipate some issues 0
+  })
+}
+(end_time <- Sys.time() - start_time) # 9 seconds
+# Find row with the lowest Test_MSE value
+min_row <- which.min(mse2$Test_MSE)
+
+# Extract the corresponding values of Layer_1_neuron, Layer_2_neuron, and Test_MSE
+(best_result <- mse2[min_row, ] )# L1: 17, Test MSE 0.9740996
+
+
+# We will procced with analysis on 2 hidden layer NN with=======================
+set.seed(123)
+formula <- as.formula(paste("Y ~", paste(colnames(train_abs_ann_scaled[-8]), collapse = " + ")))
+nn_two_final <- neuralnet(formula, data=train_abs_ann_scaled, hidden=c(49, 18))
+#nn_model <- neuralnet(formula, data = train_abs_ann_scaled, hidden = c(33, 96)) # Optimised 2 hidden layer without year
+
+# Plot residuals train data
+yhat_train <- predict(nn_two_final, newdata = train_abs_ann_scaled)
+res_train <- yhat_train - train_abs_ann_scaled$Y 
+par(mfrow = c(1,2))
+plot(train_abs_ann_scaled$Y , res_train)
+qqnorm(res_train)
+qqline(res_train)
+(mse_train_nn <- mean(res_train^2)) 
+(sqrt(mse_train_nn)) 
+
+# Plot residuals test data
+yhat_test <- predict(nn_two_final, newdata = test_abs_ann_scaled)
+res_test <- yhat_test - test_abs_ann_scaled$Y 
+par(mfrow = c(1,2))
+plot(test_abs_ann_scaled$Y , res_test)
+qqnorm(res_test)
+qqline(res_test)
+(mse_test_nn <- mean(res_test^2)) 
+(sqrt(mse_test_nn)) 
+
+
+
+
+
+# Cross validation NN based on above============================================
+# We observe large RMSE with all input varibles including year. If we remove year
+# then we hyptohisis the model will be less prone to overfitting. As such 
+# when we removed year we obtained an improved CV RMSE
 k <- 10
-folds <- createFolds(train_abs_ann_scaled$Y, k = k, list = TRUE, returnTrain = TRUE)
 
-# initialize vector to store validation RMSEs
-rmse_vals <- rep(0, k)
+# Split the data into k equal-sized folds
+fold_indices <- cut(seq(1, nrow(train_abs_ann_scaled)), breaks = k, labels = FALSE)
 
-# loop over each fold and train the neural network model
-for (i in seq_along(folds)) {
-  # extract training and validation data
-  train_data <- train_abs_ann_scaled[folds[[i]], ]
-  validation_data <- train_abs_ann_scaled[-folds[[i]], ]
+# Initialize a list to store the cross-validation results
+cv_results <- list()
+
+# Loop through each fold and train the model
+for (i in 1:k) {
+  formula <- as.formula(paste("Y ~", paste(colnames(train_abs_ann_scaled[-8]), collapse = " + ")))
+  set.seed(123)
+  # Get the indices of the current fold
+  test_indices <- which(fold_indices == i)
+  train_indices <- which(fold_indices != i)
   
-  # train neural network model
-  nn <- neuralnet(formula, data=train_data, hidden=c(5,3),  stepmax=1e+06)
+  # Extract the training and test data for the current fold
+  train_data <- train_abs_ann_scaled[train_indices, ]
+  test_data <- train_abs_ann_scaled[test_indices, ]
   
-  # make predictions on validation data
-  pred <- predict(nn, validation_data[-8])
+  # Train the model on the training data
+  #nn_model <- neuralnet(formula, data = train_data, hidden = c(17)) # Optimised 1 hidden layer
+  nn_model <- neuralnet(formula, data = train_data, hidden = c(49, 18)) # Optimised 2 hidden layer with 51 neuron search
+  #nn_model <- neuralnet(formula, data = train_data, hidden = c(4, 85)) # Optimised 2 hidden layer with 100 neuron search
   
-  # calculate RMSE for validation data
-  rmse <- sqrt(mean((pred - validation_data$Y)^2))
+
   
-  # store RMSE value
-  rmse_vals[i] <- rmse
+  # Make predictions on the test data
+  yhat <- predict(nn_model, test_data)
+  
+  residuals <- yhat - test_data$Y 
+  mse <- mean(residuals^2)
+  rmse <- sqrt(mse)
+  
+  # Add the cross-validation metric to the results list
+  cv_results[[i]] <- rmse
 }
 
-# calculate mean RMSE over all folds
-mean_rmse <- mean(rmse_vals) # 1.501751
+# Compute the average cross-validation metric across all folds
+avg_cv_metric <- mean(unlist(cv_results))
 
-# fit final model on all training data and make predictions on test data
-final_model <- build_nn(train_abs_ann_scaled, c(5, 3))
-test_pred <- predict(final_model, test_abs_ann_scaled)
-
-# calculate test RMSE
-test_rmse <- (mean((test_pred - test_abs_ann_scaled$Y)^2))
+# Print the cross-validation results
+print(paste0("Average cross-validation metric: ", avg_cv_metric))
 
 
-
-
-
-
-# Compare ML against ANN========================================================
-
+# End code: NOTE: We have eddited the code to optimise different variations
+# such as removing year, lagging etc. We have hashed (#) them out as needed/not
+# to compare and contrast some points.
